@@ -743,3 +743,30 @@ VALUES
 ('INGRESO', 'Pase Diario de Entrenamiento', 5.00, 'EFECTIVO')
 ON CONFLICT DO NOTHING;
 
+-- ==============================================================================
+-- 8. REPLICACIÓN REALTIME (SINCRONIZACIÓN MULTI-DISPOSITIVO EN TIEMPO REAL)
+-- ==============================================================================
+DO $$
+BEGIN
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE asistencias;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE suscripciones;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE clientes;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE caja_movimientos;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE planes;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+END $$;
+

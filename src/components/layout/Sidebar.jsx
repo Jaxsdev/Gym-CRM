@@ -26,6 +26,7 @@ export default function Sidebar({
   onOpenNewSub,
   currentUser = null,
   onLogout,
+  onOpenDiagnostics,
   isMobileOpen = false,
   onCloseMobile
 }) {
@@ -190,8 +191,12 @@ export default function Sidebar({
         ))}
       </div>
 
-      {/* Status Card (Styled like Gumloop's "Credits Remaining") */}
-      <div className="p-3 m-3 rounded-none bg-gray-50 border border-gray-200 text-xs">
+      {/* Status Card (Clickable to open System Diagnostic) */}
+      <div 
+        onClick={onOpenDiagnostics}
+        className="p-3 m-3 rounded-none bg-gray-50 hover:bg-gray-100 border border-gray-200 text-xs cursor-pointer transition-colors group"
+        title="Clic para abrir Diagnóstico del Sistema y Estado Realtime"
+      >
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-[11px] font-semibold text-gray-700">Socias Activas</span>
           <span className="font-mono text-[11px] font-bold text-gray-900">
@@ -209,7 +214,9 @@ export default function Sidebar({
             <span className={`w-1.5 h-1.5 rounded-none ${isSupabaseActive ? 'bg-emerald-500' : 'bg-amber-500'}`} />
             {isSupabaseActive ? 'Supabase Conectado' : 'Modo Portátil'}
           </span>
-          <ShieldCheck className="w-3.5 h-3.5 text-gray-400" />
+          <span className="text-gray-400 font-mono text-[10px] group-hover:text-blue-600 transition-colors">
+            Diagnóstico ↗
+          </span>
         </div>
       </div>
 

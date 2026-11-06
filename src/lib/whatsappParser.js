@@ -76,7 +76,7 @@ export function parseWhatsAppTemplate(templateTexto, variables = {}) {
     '{dias_sin_asistir}': variables.dias_sin_asistir !== undefined ? variables.dias_sin_asistir : '3',
     '{promo_nombre}': variables.promo_nombre || variables.nombre_promocion || 'Promoción Especial',
     '{promo_precio}': variables.promo_precio ? `${Number(variables.promo_precio).toFixed(2)}` : '50.00',
-    '{gym_nombre}': variables.gym_nombre || import.meta.env.VITE_GYM_NAME || 'VitalFit Gym',
+    '{gym_nombre}': variables.gym_nombre || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GYM_NAME) || (typeof process !== 'undefined' && process.env?.VITE_GYM_NAME) || 'VitalFit Gym',
   };
 
   for (const [key, value] of Object.entries(replacements)) {

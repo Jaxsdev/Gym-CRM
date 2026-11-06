@@ -19,6 +19,7 @@ export default function Topbar({
   isSupabaseActive,
   currentUser = null,
   onLogout,
+  onOpenDiagnostics,
   onOpenNotifications,
   onToggleMobileMenu
 }) {
@@ -66,6 +67,16 @@ export default function Topbar({
 
       {/* Right Action Buttons & Alerts */}
       <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+        {/* Realtime Diagnostic Status Pill */}
+        <button
+          onClick={onOpenDiagnostics}
+          className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-none border border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700 text-[11px] font-mono font-semibold transition-colors"
+          title="Verificar conexión en tiempo real y base de datos"
+        >
+          <span className={`w-1.5 h-1.5 rounded-none ${isSupabaseActive ? 'bg-emerald-500' : 'bg-amber-500'} animate-pulse`} />
+          <span>{isSupabaseActive ? 'Realtime Cloud' : 'Realtime Local'}</span>
+        </button>
+
         {/* Quick Kiosk Access */}
         <button
           onClick={() => setCurrentView('kiosco')}

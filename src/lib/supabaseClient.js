@@ -1,9 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
-import { format, addDays, differenceInCalendarDays, subDays } from 'date-fns';
+import { format, addDays, differenceInCalendarDays, subDays, isSameDay } from 'date-fns';
 
-// 1. Lectura de Variables de Entorno
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// 1. Lectura de Variables de Entorno (Compatible con Vite y Node Test Runner)
+const env = (typeof import.meta !== 'undefined' && import.meta.env) 
+  ? import.meta.env 
+  : (typeof process !== 'undefined' && process.env ? process.env : {});
+
+const supabaseUrl = env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
 
 export const isSupabaseConfigured = () => {
   return Boolean(
@@ -418,10 +422,12 @@ const getInitialSeedData = () => {
 
 export const getLocalDB = () => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const storage = typeof window !== 'undefined' ? window.localStorage : (typeof globalThis !== 'undefined' ? globalThis.localStorage : null);
+    if (!storage) return getInitialSeedData();
+    const raw = storage.getItem(STORAGE_KEY);
     if (!raw) {
       const initial = getInitialSeedData();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
+      storage.setItem(STORAGE_KEY, JSON.stringify(initial));
       return initial;
     }
     return JSON.parse(raw);
@@ -431,12 +437,81 @@ export const getLocalDB = () => {
   }
 };
 
+const localBroadcast = typeof window !== 'undefined' && 'BroadcastChannel' in window
+  ? new BroadcastChannel('gym_crm_realtime_bus')
+  : null;
+
 export const saveLocalDB = (data) => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const storage = typeof window !== 'undefined' ? window.localStorage : (typeof globalThis !== 'undefined' ? globalThis.localStorage : null);
+    if (storage) {
+      storage.setItem(STORAGE_KEY, JSON.stringify(data));
+      storage.setItem('gym_crm_sync_signal', Date.now().toString());
+    }
+    localBroadcast?.postMessage({ type: 'DATA_MUTATED', timestamp: Date.now() });
   } catch (e) {
     console.error('Error guardando Local DB:', e);
   }
+};
+
+// ==============================================================================
+// 3.1. SUSCRIPCIÓN EN TIEMPO REAL MULTI-DISPOSITIVO (REALTIME SYNC)
+// ==============================================================================
+export const subscribeToRealtimeChanges = (callback) => {
+  const cleanups = [];
+
+  // 1. Supabase Cloud Realtime (WebSockets entre múltiples dispositivos / computadoras / teléfonos)
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const channel = supabase
+        .channel('gym-realtime-global')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'asistencias' }, (p) => {
+          callback({ table: 'asistencias', event: p, mode: 'SUPABASE' });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'suscripciones' }, (p) => {
+          callback({ table: 'suscripciones', event: p, mode: 'SUPABASE' });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'clientes' }, (p) => {
+          callback({ table: 'clientes', event: p, mode: 'SUPABASE' });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'caja_movimientos' }, (p) => {
+          callback({ table: 'caja_movimientos', event: p, mode: 'SUPABASE' });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'planes' }, (p) => {
+          callback({ table: 'planes', event: p, mode: 'SUPABASE' });
+        })
+        .subscribe();
+
+      cleanups.push(() => {
+        supabase.removeChannel(channel);
+      });
+    } catch (err) {
+      console.warn('Error suscribiendo a Supabase Realtime:', err);
+    }
+  }
+
+  // 2. Realtime Local (Multi-pestañas / ventanas simultáneas sin delay)
+  if (typeof window !== 'undefined') {
+    const handleStorage = (e) => {
+      if (e.key === STORAGE_KEY || e.key === 'gym_crm_sync_signal') {
+        callback({ type: 'LOCAL_SYNC', source: 'storage' });
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    cleanups.push(() => window.removeEventListener('storage', handleStorage));
+
+    if ('BroadcastChannel' in window) {
+      const bc = new BroadcastChannel('gym_crm_realtime_bus');
+      bc.onmessage = () => {
+        callback({ type: 'LOCAL_SYNC', source: 'broadcast' });
+      };
+      cleanups.push(() => bc.close());
+    }
+  }
+
+  return () => {
+    cleanups.forEach(fn => fn());
+  };
 };
 
 // ==============================================================================
@@ -1077,7 +1152,14 @@ export const api = {
     }
 
     const db = getLocalDB();
-    const hoy = (db.asistencias || []).filter(a => a.fecha_hora_entrada?.startsWith(todayStr));
+    const hoy = (db.asistencias || []).filter(a => {
+      if (!a.fecha_hora_entrada) return false;
+      try {
+        return isSameDay(new Date(a.fecha_hora_entrada), new Date());
+      } catch {
+        return false;
+      }
+    });
     return hoy.map(a => {
       const c = db.clientes?.find(cli => cli.id === a.cliente_id);
       const sub = db.suscripciones?.find(s => s.id === a.suscripcion_id);
@@ -1336,5 +1418,62 @@ export const api = {
     saveLocalDB(db);
     return nuevo;
   },
+
+  // --- DIAGNÓSTICO EN VIVO DEL SISTEMA (TEST & HEALTH CHECK) ---
+  async checkHealth() {
+    const start = performance.now();
+    const isConfigured = isSupabaseConfigured() && supabase !== null;
+
+    if (isConfigured) {
+      try {
+        const [cliTest, planTest, attTest, cajaTest] = await Promise.all([
+          supabase.from('clientes').select('id', { count: 'exact', head: true }),
+          supabase.from('planes').select('id', { count: 'exact', head: true }),
+          supabase.from('asistencias').select('id', { count: 'exact', head: true }),
+          supabase.from('caja_movimientos').select('id', { count: 'exact', head: true })
+        ]);
+
+        const latency = Math.round(performance.now() - start);
+        const hasErrors = cliTest.error || planTest.error;
+
+        if (!hasErrors) {
+          return {
+            ok: true,
+            mode: 'SUPABASE_CLOUD',
+            latencyMs: latency,
+            endpoint: supabaseUrl,
+            counts: {
+              clientes: cliTest.count || 0,
+              planes: planTest.count || 0,
+              asistencias: attTest.count || 0,
+              caja: cajaTest.count || 0
+            },
+            realtime: 'ACTIVO_WEBSOCKETS',
+            message: 'Conectado exitosamente a Supabase Cloud (PostgreSQL)'
+          };
+        }
+      } catch (e) {
+        console.warn('Fallo test Supabase, fallback a local:', e);
+      }
+    }
+
+    // Modo Local
+    const db = getLocalDB();
+    const latency = Math.round(performance.now() - start);
+    return {
+      ok: true,
+      mode: 'LOCAL_FALLBACK',
+      latencyMs: latency,
+      endpoint: 'Cache Local Navegador (LocalStorage / BroadcastChannel)',
+      counts: {
+        clientes: db.clientes?.length || 0,
+        planes: db.planes?.length || 0,
+        asistencias: db.asistencias?.length || 0,
+        caja: db.caja_movimientos?.length || 0
+      },
+      realtime: 'ACTIVO_BROADCAST_CHANNEL',
+      message: 'Base de datos local activa (Modo Portátil con soporte Realtime local)'
+    };
+  }
 };
 

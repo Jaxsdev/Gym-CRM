@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import Topbar from './components/layout/Topbar';
 import NotificationCenter from './components/layout/NotificationCenter';
+import SystemDiagnosticModal from './components/layout/SystemDiagnosticModal';
 import LoginView from './components/auth/LoginView';
 import LoginBriefingModal from './components/auth/LoginBriefingModal';
 import DashboardView from './components/dashboard/DashboardView';
@@ -13,7 +14,7 @@ import MembersDirectoryView from './components/members/MembersDirectoryView';
 import KioskView from './components/kiosk/KioskView';
 import PosView from './components/pos/PosView';
 
-import { api, isSupabaseConfigured } from './lib/supabaseClient';
+import { api, isSupabaseConfigured, subscribeToRealtimeChanges } from './lib/supabaseClient';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
@@ -25,6 +26,7 @@ export default function App() {
     }
   });
   const [isLoginBriefingOpen, setIsLoginBriefingOpen] = useState(false);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
 
   const [currentView, setCurrentView] = useState('dashboard');
   const [isNewSubModalOpen, setIsNewSubModalOpen] = useState(false);
@@ -75,6 +77,17 @@ export default function App() {
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  // Sincronización en Tiempo Real Multi-Dispositivo (Supabase WebSockets & BroadcastChannel)
+  useEffect(() => {
+    const unsubscribe = subscribeToRealtimeChanges((changeEvent) => {
+      console.log('🔄 Sincronización Realtime recibida:', changeEvent);
+      loadData();
+    });
+    return () => {
+      unsubscribe();
+    };
   }, [loadData]);
 
   // Action Handlers
@@ -200,6 +213,7 @@ export default function App() {
         onOpenNewSub={() => handleOpenNewSub(null)}
         currentUser={currentUser}
         onLogout={handleLogout}
+        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
         isMobileOpen={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
       />
@@ -215,6 +229,7 @@ export default function App() {
           isSupabaseActive={isSupabaseActive}
           currentUser={currentUser}
           onLogout={handleLogout}
+          onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
           onOpenNotifications={() => setIsNotificationsOpen(true)}
           onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         />
@@ -349,6 +364,12 @@ export default function App() {
           setIsLoginBriefingOpen(false);
           setIsNotificationsOpen(true);
         }}
+      />
+
+      {/* 6. Diagnóstico del Sistema y Verificación Realtime */}
+      <SystemDiagnosticModal
+        isOpen={isDiagnosticsOpen}
+        onClose={() => setIsDiagnosticsOpen(false)}
       />
     </div>
   );
